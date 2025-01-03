@@ -1,0 +1,5 @@
+.env
+build/
+.venv/
+node_modules/
+dist/

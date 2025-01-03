@@ -1,0 +1,175 @@
+# Tango.rs
+
+<div align="center">
+  <a href="https://github.com/bazhenov/tango/actions/workflows/test.yaml"><img src="https://github.com/bazhenov/tango/actions/workflows/test.yaml/badge.svg" alt="Test"/></a>
+  <a href="https://github.com/bazhenov/tango/actions/workflows/test-nightly.yaml"><img src="https://github.com/bazhenov/tango/actions/workflows/test-nightly.yaml/badge.svg" alt="Nightly Test"/></a>
+  <a href="https://crates.io/crates/tango-bench"><img src="https://img.shields.io/crates/v/tango-bench" alt="Tango Bench"/></a>
+  <a href="https://docs.rs/tango-bench/latest/tango_bench/"><img src="https://img.shields.io/docsrs/tango-bench" alt="Tango Bench"/></a>
+</div>
+
+It used to be that benchmarking required a significant amount of time and numerous iterations to arrive at meaningful results, which was particularly arduous when trying to detect subtle changes, such as those within the range of a few percentage points.
+
+Introducing Tango.rs, a novel benchmarking framework that employs [paired benchmarking](https://www.bazhenov.me/posts/paired-benchmarking/) to assess code performance. This approach capitalizes on the fact that it's far more efficient to measure the performance difference between two simultaneously executing functions compared to two functions executed consecutively.
+
+![](https://github.com/bazhenov/tango/blob/main/assets/sample.png)
+
+Features:
+
+- very high sensitivity to changes which allows to converge on results quicker than traditional (pointwise) approach. Often the fraction of a second is enough;
+- ability to compare different versions of the same code from different VCS commits (A/B-benchmarking);
+- async support using tokio.rs;
+- macOS, Linux and Windows support;
+
+## 1 second, 1 percent, 1 error
+
+Compared to traditional pointwise benchmarking, paired benchmarking is significantly more sensitive to changes. This heightened sensitivity enables the early detection of statistically significant performance variations.
+
+Tango is designed to have the capability to detect a 1% change in performance within just 1 second in at least 9 out of 10 test runs.
+
+## Prerequirements
+
+1. Rust and Cargo toolchain installed (Rust stable is supported on all platforms)
+1. (_Optional_) [`cargo-export`](https://github.com/bazhenov/cargo-export) installed
+
+## Getting started
+
+1. Add cargo dependency and create new benchmark:
+
+   ```toml
+   [dev-dependencies]
+   tango-bench = "0.7.2"
+
+   [[bench]]
+   name = "factorial"
+   harness = false
+   ```
+
+1. Add `benches/factorial.rs` with the following content:
+
+   ```rust,no_run
+   use std::hint::black_box;
+   use tango_bench::{benchmark_fn, tango_benchmarks, tango_main, IntoBenchmarks};
+
+   pub fn factorial(mut n: usize) -> usize {
+       let mut result = 1usize;
+       while n > 0 {
+           result = result.wrapping_mul(black_box(n));
+           n -= 1;
+       }
+       result
+   }
+
+   fn factorial_benchmarks() -> impl IntoBenchmarks {
+       [
+           benchmark_fn("factorial", |b| b.iter(|| factorial(500))),
+       ]
+   }
+
+   tango_benchmarks!(factorial_benchmarks());
+   tango_main!();
+   ```
+
+1. Build and export benchmark to `target/benchmarks` directory:
+
+   ```console
+   $ cargo export target/benchmarks -- bench --bench=factorial
+   ```
+
+1. Now lets try to modify `factorial.rs` and make factorial faster :)
+
+   ```rust,ignore
+   fn factorial_benchmarks() -> impl IntoBenchmarks {
+       [
+           benchmark_fn("factorial", |b| b.iter(|| factorial(495))),
+       ]
+   }
+   ```
+
+1. Now we can compare new version with already built one:
+
+   ```console
+   $ cargo bench -q --bench=factorial -- compare target/benchmarks/factorial
+   factorial             [ 375.5 ns ... 369.0 ns ]      -1.58%*
+   ```
+The result shows that indeed there is indeed ~1% difference between `factorial(500)` and `factorial(495)`.
+
+Additional examples are available in `examples` directory.
+
+## Async support
+
+To use Tango.rs in an asynchronous setup, follow these steps:
+
+1. Add `tokio` and `tango-bench` dependencies to your `Cargo.toml`:
+
+    ```toml
+    [dev-dependencies]
+    tango-bench = { version = "0.7.2", features = ["async-tokio"] }
+
+    [[bench]]
+    name = "async_factorial"
+    harness = false
+    ```
+
+    If you need Tokio's timer functionalities (e.g., for `tokio::time::sleep`), you can enable the `async-tokio-all-drivers` feature:
+
+    ```toml
+    [dev-dependencies]
+    tango-bench = { version = "0.7.2", features = ["async-tokio-all-drivers"] }
+    ```
+
+2. Create `benches/async_factorial.rs` with the following content:
+
+    ```rust,no_run
+    use std::hint::black_box;
+    use tango_bench::{
+        async_benchmark_fn, asynchronous::tokio::TokioRuntime, tango_benchmarks, tango_main,
+        IntoBenchmarks,
+    };
+
+    pub async fn factorial(mut n: usize) -> usize {
+        let mut result = 1usize;
+        while n > 0 {
+            result = result.wrapping_mul(black_box(n));
+            n -= 1;
+        }
+        result
+    }
+
+    fn benchmarks() -> impl IntoBenchmarks {
+        [async_benchmark_fn("async_factorial", TokioRuntime, |b| {
+            b.iter(|| async { factorial(500).await })
+        })]
+    }
+
+    tango_benchmarks!(benchmarks());
+    tango_main!();
+    ```
+
+3. Build and use benchmarks as you do in synchronous case
+
+    ```console
+    $ cargo bench -q --bench=async_factorial -- compare
+    ```
+
+## Runner arguments
+
+There are several arguments you can pass to the `compare` command to change it behavior
+
+  - `-t`, `--time` – how long to run each benchmark (in seconds)
+  - `-s`, `--samples` – how much samples to gather from each benchmark
+  - `-f` – filter benchmarks by name. Glob patterns are supported (eg. `*/bench_name/{2,4,8}/**`)
+  - `-d [path]` – dump CSV with raw samples in a given directory
+  - `--gnuplot` – generate plot for each benchmark (requires gnuplot to be installed)
+  - `-o`, `--filter-outliers` – additionally filter outliers
+  - `-p`, `--parallel` - run base/candidate functions in 2 different threads instead of interleaving in a single thread
+  - `--noise-threshold` – consider benchmark differences below this percentage as noise (default: 0.5%)
+  - `--fail-fast` - terminate early on first statistically significant performance regression
+
+
+## Contributing
+
+The project is in its early stages so any help will be appreciated. Here are some ideas you might find interesting
+
+- if you're a library author, trying out tango and providing feedback will be very useful
+- take one of the [issues](https://github.com/bazhenov/tango/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22) and try to fix it
+- find a way to provide a more user friendly API for registering functions in the system
