@@ -3,3 +3,4 @@ name = "tango"
 version = "0.1.0"
 edition = "2021"
 description = "Rust microbenchmarking harness based on paired-testing methodology"
+# drop an unused branch
