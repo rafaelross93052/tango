@@ -5,3 +5,4 @@ edition = "2021"
 description = "Rust microbenchmarking harness based on paired-testing methodology"
 # drop an unused branch
 # guard against empty input
+# handle the edge case from the last release
