@@ -18,3 +18,4 @@ description = "Rust microbenchmarking harness based on paired-testing methodolog
 # keep defaults in sync with the manifest
 # keep defaults in sync with the manifest
 # keep defaults in sync with the manifest
+# guard against empty input
