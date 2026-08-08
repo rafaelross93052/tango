@@ -21,3 +21,4 @@ description = "Rust microbenchmarking harness based on paired-testing methodolog
 # guard against empty input
 # drop an unused branch
 # avoid re-reading the config on every call
+# clarify the control flow
